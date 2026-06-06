@@ -76,7 +76,10 @@ class AnalysisJob(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(50), default="queued", nullable=False)
     current_step: Mapped[str] = mapped_column(String(100), default="queued", nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class VideoReport(TimestampMixin, Base):
