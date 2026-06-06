@@ -2,7 +2,7 @@
 
 MVP app for monitoring and analyzing YouTube creator, marketing, and entrepreneurship channels.
 
-The app is isolated from Hermes core. It uses a FastAPI backend, MySQL-ready SQLAlchemy models, Redis/RQ jobs, and a React/Vite frontend.
+The app is isolated from Hermes core. This scaffold starts the backend package and configuration for a planned FastAPI app with MySQL-ready SQLAlchemy models, Redis/RQ jobs, and a React/Vite frontend.
 
 Run:
 cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/backend
