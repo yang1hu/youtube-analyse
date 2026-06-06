@@ -28,4 +28,9 @@ def dashboard() -> dict:
 
 @router.post("/analysis/video")
 def create_video_analysis(request: AnalyzeVideoRequest) -> dict:
-    return {"status": "queued", "target_type": "video_url", "video_url": request.video_url}
+    return {
+        "status": "mock_queued",
+        "mock": True,
+        "target_type": "video_url",
+        "video_url": request.video_url,
+    }
