@@ -59,3 +59,19 @@ def test_agent_runtime_generates_creator_growth_report():
     assert result.report.comment_insights.status == "not_configured"
     assert result.report.idea_cards[0].score >= 0
     assert result.tool_results["get_comments"]["status"] == "not_configured"
+
+
+from creator_agent.db.models import IdeaCard, VideoReport
+from creator_agent.services.analysis_service import AnalysisService
+
+
+def test_analysis_service_persists_report_and_idea_cards(db_session):
+    service = AnalysisService(db_session=db_session, runtime=AgentRuntime(build_default_registry()))
+
+    video = service.analyze_video_url("https://youtu.be/abc123")
+
+    report = db_session.query(VideoReport).filter_by(video_id=video.id).one()
+    ideas = db_session.query(IdeaCard).filter_by(source_video_id=video.id).all()
+    assert report.topic_type == "creator_growth"
+    assert report.growth_score >= 0
+    assert len(ideas) == 1
