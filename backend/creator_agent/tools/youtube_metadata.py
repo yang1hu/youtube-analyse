@@ -1,11 +1,17 @@
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 
 def _resolve_video_id(video_url: str | None, video_id: str | None) -> str:
     if video_id:
         return video_id
     if video_url:
-        return video_url.rstrip("/").split("/")[-1] or "manual-video"
+        parsed_url = urlparse(video_url)
+        query_video_id = parse_qs(parsed_url.query).get("v", [None])[0]
+        if query_video_id:
+            return query_video_id
+
+        return parsed_url.path.rstrip("/").split("/")[-1] or "manual-video"
     return "manual-video"
 
 
