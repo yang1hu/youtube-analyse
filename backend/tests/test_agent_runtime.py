@@ -43,3 +43,19 @@ def test_idea_card_score_must_be_between_zero_and_one_hundred():
             risk_notes="none",
             score=101,
         )
+
+
+from creator_agent.agent.runtime import AgentRuntime
+from creator_agent.tools import build_default_registry
+
+
+def test_agent_runtime_generates_creator_growth_report():
+    runtime = AgentRuntime(tool_registry=build_default_registry())
+
+    result = runtime.run_video_analysis(video_url="https://youtu.be/abc123")
+
+    assert result.report.summary
+    assert result.report.creative_breakdown.topic_type == "creator_growth"
+    assert result.report.comment_insights.status == "not_configured"
+    assert result.report.idea_cards[0].score >= 0
+    assert result.tool_results["get_comments"]["status"] == "not_configured"
