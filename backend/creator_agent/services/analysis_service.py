@@ -30,8 +30,7 @@ class AnalysisService:
 
         video = VideoRepository(self.db_session).get_or_create(channel=channel, metadata=metadata)
 
-        existing_report = self.db_session.query(VideoReport).filter_by(video_id=video.id).one_or_none()
-        if existing_report is not None:
+        for existing_report in self.db_session.query(VideoReport).filter_by(video_id=video.id).all():
             self.db_session.delete(existing_report)
 
         for idea in self.db_session.query(IdeaCard).filter_by(source_video_id=video.id).all():

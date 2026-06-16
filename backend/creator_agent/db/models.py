@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from creator_agent.db.base import Base
@@ -48,6 +48,7 @@ class Video(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_text: Mapped[str | None] = mapped_column(String(255))
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     view_count: Mapped[int | None] = mapped_column(Integer)
     like_count: Mapped[int | None] = mapped_column(Integer)
@@ -55,12 +56,13 @@ class Video(TimestampMixin, Base):
     transcript: Mapped[str | None] = mapped_column(Text)
     transcript_status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
     analysis_status: Mapped[str] = mapped_column(String(50), default="pending", nullable=False)
+    is_recent_upload: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     channel: Mapped["Channel"] = relationship(back_populates="videos")
-    report: Mapped["VideoReport | None"] = relationship(
+    reports: Mapped[list["VideoReport"]] = relationship(
         back_populates="video",
         cascade="all, delete-orphan",
-        uselist=False,
+        order_by="desc(VideoReport.created_at)",
     )
     idea_cards: Mapped[list["IdeaCard"]] = relationship(back_populates="source_video", cascade="all, delete-orphan")
     comments: Mapped[list["Comment"]] = relationship(back_populates="video", cascade="all, delete-orphan")
@@ -70,6 +72,7 @@ class AnalysisJob(TimestampMixin, Base):
     __tablename__ = "analysis_jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     type: Mapped[str] = mapped_column(String(100), nullable=False)
     target_type: Mapped[str] = mapped_column(String(100), nullable=False)
     target_id: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -86,11 +89,12 @@ class VideoReport(TimestampMixin, Base):
     __tablename__ = "video_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id"), unique=True, index=True, nullable=False)
+    external_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    video_id: Mapped[int] = mapped_column(ForeignKey("videos.id"), index=True, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     topic_type: Mapped[str | None] = mapped_column(String(100))
-    title_hook: Mapped[str | None] = mapped_column(String(255))
-    opening_hook: Mapped[str | None] = mapped_column(String(255))
+    title_hook: Mapped[str | None] = mapped_column(Text)
+    opening_hook: Mapped[str | None] = mapped_column(Text)
     structure_analysis: Mapped[list[str] | None] = mapped_column(JSON)
     emotional_curve: Mapped[list[str] | None] = mapped_column(JSON)
     monetization_intent: Mapped[str | None] = mapped_column(String(255))
@@ -98,13 +102,14 @@ class VideoReport(TimestampMixin, Base):
     growth_judgement: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
-    video: Mapped["Video"] = relationship(back_populates="report")
+    video: Mapped["Video"] = relationship(back_populates="reports")
 
 
 class IdeaCard(TimestampMixin, Base):
     __tablename__ = "idea_cards"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     source_video_id: Mapped[int] = mapped_column(ForeignKey("videos.id"), index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     angle: Mapped[str | None] = mapped_column(String(255))
@@ -163,3 +168,50 @@ class CommentInsight(TimestampMixin, Base):
     raw_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     comment: Mapped["Comment"] = relationship(back_populates="insight")
+
+
+class StyleProfile(TimestampMixin, Base):
+    __tablename__ = "style_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_report_id: Mapped[str | None] = mapped_column(String(255))
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class SampleAnalysis(TimestampMixin, Base):
+    __tablename__ = "sample_analyses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    video_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    video_title: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="complete", nullable=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class CopyDraft(TimestampMixin, Base):
+    __tablename__ = "copy_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    style_external_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    idea_external_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(100))
+    model: Mapped[str | None] = mapped_column(String(255))
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class ScriptDraft(TimestampMixin, Base):
+    __tablename__ = "script_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    idea_external_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    style_external_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    parent_external_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)

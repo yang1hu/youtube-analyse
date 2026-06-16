@@ -1,6 +1,8 @@
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from creator_agent.collectors.youtube_browser import BrowserCollectionUnavailable, collect_video_metadata
+
 
 def _resolve_video_id(video_url: str | None, video_id: str | None) -> str:
     if video_id:
@@ -17,6 +19,11 @@ def _resolve_video_id(video_url: str | None, video_id: str | None) -> str:
 
 def get_video_metadata(video_url: str | None = None, video_id: str | None = None) -> dict[str, Any]:
     youtube_video_id = _resolve_video_id(video_url=video_url, video_id=video_id)
+    try:
+        return collect_video_metadata(video_url=video_url, video_id=youtube_video_id)
+    except BrowserCollectionUnavailable as exc:
+        collection_status = "browser_unavailable"
+        collection_error = str(exc)
 
     return {
         "youtube_video_id": youtube_video_id,
@@ -30,4 +37,7 @@ def get_video_metadata(video_url: str | None = None, video_id: str | None = None
         "view_count": 0,
         "like_count": 0,
         "comment_count": 0,
+        "collection_status": collection_status,
+        "collection_source": "stub",
+        "collection_error": collection_error,
     }

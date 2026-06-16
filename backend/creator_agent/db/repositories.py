@@ -42,6 +42,7 @@ class VideoRepository:
             title=str(metadata.get("title") or "Untitled video"),
             url=str(metadata.get("url") or ""),
             published_at=self._published_at(metadata.get("published_at")),
+            published_text=self._published_text(metadata),
             duration_seconds=metadata.get("duration_seconds"),
             view_count=metadata.get("view_count"),
             like_count=metadata.get("like_count"),
@@ -58,5 +59,14 @@ class VideoRepository:
         if value is None or isinstance(value, datetime):
             return value
         if isinstance(value, str):
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
         return None
+
+    def _published_text(self, metadata: dict[str, Any]) -> str:
+        value = metadata.get("published_text") or metadata.get("published_at") or ""
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
