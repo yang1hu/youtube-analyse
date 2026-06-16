@@ -1,19 +1,79 @@
-# YouTube Creator Growth Agent
+# YouTube Creator Agent
 
-Standalone local app for monitoring one YouTube channel, collecting recent videos, fetching scripts/subtitles, and turning a video into an LLM-based creator analysis report and reusable idea cards.
+A local-first workspace for analyzing YouTube videos, extracting reusable creator patterns, and turning those patterns into idea cards, style profiles, and script drafts.
 
-The app is isolated from Hermes core. It uses a FastAPI backend, local JSON runtime storage by default for the current MVP, optional MySQL/Redis-ready models for later, and a React/Vite frontend.
+The project combines a FastAPI backend with a React/Vite frontend. It is designed for personal research workflows: configure channels, collect recent uploads, analyze videos with transcripts and an OpenAI-compatible LLM, translate scripts, maintain a sample library, and generate draft scripts from reusable ideas.
+
+> This is not an official YouTube product. Use it responsibly and avoid high-frequency collection that may trigger platform rate limits.
+
+## Features
+
+- Channel monitoring and recent upload sync.
+- Browser-based YouTube metadata collection with Playwright, DrissionPage, or CDP.
+- Transcript/subtitle collection with `yt-dlp` and `youtube-transcript-api`.
+- LLM-first video analysis with a rule-based fallback.
+- Video report pages with transcript evidence and cached Chinese translation.
+- Idea Lab for reusable idea cards and complete outline briefs.
+- Sample Library for first-five-minute opening analysis, tags, notes, and multi-sample style merging.
+- Style Library for learning reusable script styles from reports or samples.
+- Script Studio for generating, rewriting, editing, versioning, and exporting script drafts.
+- Task Center with optional Redis queue support and manual fallback.
+- Optional MySQL snapshot storage for workspace data.
+- Local health checks for browser, LLM, Redis, MySQL, cache paths, and media tooling.
+
+## Architecture
+
+```text
+frontend/        React 19 + Vite workspace UI
+backend/         FastAPI service, agent runtime, collectors, task services
+scripts/         Local development helper scripts
+docs/            Product and implementation notes
+```
+
+Runtime state is local by default:
+
+- `backend/.env` stores local secrets and environment overrides.
+- `backend/.runtime/workspace-settings.json` stores settings saved from the UI.
+- `backend/.runtime/workspace-data.json` stores local workspace data.
+- `backend/.runtime/logs/analysis.jsonl` stores audit events without API keys.
+- `backend/.runtime/transcripts/` stores transcript cache files.
+- `backend/.runtime/translations/` stores translation cache files.
+- `backend/.runtime/samples/` stores local sample assets.
+
+These paths are ignored by Git and should not be committed.
+
+## Requirements
+
+- Python 3.11+
+- Node.js 20+
+- Chromium browser support for Playwright, DrissionPage, or CDP collection
+- Optional: Redis for background task queue
+- Optional: MySQL for snapshot storage
+- Optional: ffmpeg for media/sample workflows
 
 ## Quick Start
 
+Clone the repository and start the local development stack:
+
 ```powershell
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent
+git clone https://github.com/yang1hu/youtube-analyse.git
+cd youtube-analyse
 .\scripts\start-dev.ps1
 ```
 
-Open `http://127.0.0.1:5173`.
+Open:
 
-The development backend defaults to `http://127.0.0.1:8001` because `8000` is often occupied by other local services. You can override it:
+```text
+http://127.0.0.1:5173
+```
+
+The script starts:
+
+- Backend API on `http://127.0.0.1:8001`
+- Frontend dev server on `http://127.0.0.1:5173`
+- Optional task worker process
+
+Override the backend port if needed:
 
 ```powershell
 $env:YCA_API_PORT="8000"
@@ -21,97 +81,111 @@ $env:VITE_API_TARGET="http://127.0.0.1:8000"
 .\scripts\start-dev.ps1
 ```
 
-## Backend
+## Backend Setup
 
 ```powershell
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/backend
+cd backend
 python -m pip install -e ".[dev]"
 python -m playwright install chromium
-python -m pytest -q
 python -m uvicorn creator_agent.main:app --host 127.0.0.1 --port 8001
 ```
 
-Optional task worker:
+Run the worker separately when not using `scripts/start-dev.ps1`:
 
 ```powershell
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/backend
+cd backend
 python -m creator_agent.worker
 ```
 
-The worker consumes Redis task IDs and also runs the channel monitor when it is due. If Redis is unavailable, tasks stay visible in Task Center and can be run manually from the UI.
+If Redis is unavailable, queued tasks remain visible in Task Center and can be run manually from the UI.
 
-`scripts/start-dev.ps1` starts the worker together with the backend and frontend. Run the worker manually only when you start services one by one.
-
-Important runtime files:
-
-- `backend/.env`: local secrets and LLM defaults. This file is ignored by git.
-- `backend/.runtime/workspace-settings.json`: channel, browser, and LLM settings saved from the Settings page.
-- `backend/.runtime/workspace-data.json`: channels, recent videos, jobs, reports, and idea cards.
-- `backend/.runtime/logs/analysis.jsonl`: append-only analysis audit log with task IDs, analyzed video URLs, tool request summaries, LLM request/response summaries, and final report status. API keys are not written.
-- `backend/.runtime/transcripts/`: saved raw scripts/subtitles.
-- `backend/.runtime/translations/`: cached Chinese translations.
-
-Local JSON storage is the default. To opt into MySQL snapshot storage, set `YCA_DATABASE_URL` before starting the backend, for example `mysql+pymysql://creator_agent:creator_agent@localhost:3306/creator_agent`.
-
-You can save LLM and browser settings before choosing a channel. A YouTube channel URL is required only when syncing or monitoring the channel.
-
-## Frontend
+## Frontend Setup
 
 ```powershell
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/frontend
+cd frontend
 npm install
 $env:VITE_API_TARGET="http://127.0.0.1:8001"
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-The frontend runs on `http://127.0.0.1:5173` and proxies `/api` to `VITE_API_TARGET`.
+The frontend proxies `/api` to `VITE_API_TARGET`.
 
-## Local Security Boundary
+## Configuration
 
-This is a local personal workspace. The backend has no authentication layer, and the LLM API key is stored in local runtime settings. Keep the backend bound to `127.0.0.1` and do not expose the API port to a LAN or public network.
+Most settings can be saved from the Settings page:
 
-The backend rejects non-local `Host` headers by default as an extra guard. To intentionally run behind your own trusted access control, set `YCA_ALLOW_REMOTE_ACCESS=true`.
+- YouTube channel URLs
+- Browser collection engine
+- Browser/CDP connection settings
+- LLM base URL
+- Analysis model
+- Translation model
+- LLM API key
+- Monitor interval and auto-analysis controls
 
-## Current Features
-
-- Configure one YouTube channel from the Settings page.
-- Save LLM and browser settings first, then add the channel URL when you are ready to sync or monitor.
-- Choose browser collection engine: Playwright, DrissionPage, or CDP for an existing local browser.
-- Sync recent videos from the configured channel.
-- Analyze a selected video with real metadata, transcript/subtitle collection, comments stub, channel profile, metrics, and LLM-first report generation.
-- Show raw script and cached Chinese translation on the Video Report page.
-- Re-run the latest report with LLM from the page.
-- Force retranslate the latest transcript with the configured OpenAI-compatible LLM endpoint.
-- Show only successful LLM report idea cards by default in the Idea Lab.
-- Clean old rule-generated idea cards from local runtime storage.
-- Keep comment collection as a first-class reserved interface returning `not_configured`.
-
-## LLM Configuration
-
-The Settings page can save:
-
-- `LLM Base URL`
-- `LLM Analysis Model`
-- `LLM Translation Model`
-- `LLM API Key`
-
-The API key is stored locally in `backend/.runtime/workspace-settings.json`, but `/api/settings` never returns the key to the browser. It only returns `openai_api_key_set`.
-
-Environment fallback variables are also supported:
-
-- `YCA_OPENAI_BASE_URL`
-- `YCA_OPENAI_ANALYSIS_MODEL`
-- `YCA_OPENAI_TRANSLATION_MODEL`
-- `YCA_OPENAI_API_KEY`
-
-## Verification
+Environment fallbacks are also supported:
 
 ```powershell
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/backend
-python -m pytest -q
+$env:YCA_OPENAI_BASE_URL="https://your-openai-compatible-endpoint/v1"
+$env:YCA_OPENAI_ANALYSIS_MODEL="your-analysis-model"
+$env:YCA_OPENAI_TRANSLATION_MODEL="your-translation-model"
+$env:YCA_OPENAI_API_KEY="your-local-secret"
+```
 
-cd C:/Users/Admin/Desktop/git_project/youtube-creator-agent/frontend
+Do not commit `backend/.env` or any file under `backend/.runtime/`.
+
+## Storage
+
+Local JSON storage is the default. To use MySQL snapshot storage, set:
+
+```powershell
+$env:YCA_DATABASE_URL="mysql+pymysql://user:password@localhost:3306/youtube_creator_agent"
+```
+
+If `YCA_WORKSPACE_DATA_PATH` is set, the app uses JSON storage even when `YCA_DATABASE_URL` exists.
+
+## Security
+
+This app is intended to run on a trusted local machine.
+
+- The backend has no user authentication.
+- The LLM API key is stored only in local runtime settings.
+- `/api/settings` returns `openai_api_key_set`, not the key value.
+- The backend rejects non-local `Host` headers by default.
+- Keep the API bound to `127.0.0.1`.
+
+To intentionally run behind your own trusted access control:
+
+```powershell
+$env:YCA_ALLOW_REMOTE_ACCESS="true"
+```
+
+## Development
+
+Run backend tests:
+
+```powershell
+cd backend
+python -m pytest -q
+```
+
+Build the frontend:
+
+```powershell
+cd frontend
 npm run build
 ```
 
-Avoid repeatedly testing YouTube collection against many videos in a short time; use one-off manual checks to reduce YouTube rate-limit risk.
+Useful frontend command:
+
+```powershell
+cd frontend
+npm run type-check
+```
+
+## Notes
+
+- Comment collection is currently a reserved interface and returns `not_configured`.
+- YouTube collection depends on page structure and external tooling, so occasional breakage is expected.
+- Avoid repeatedly testing collection against many videos in a short time.
+- For best results, configure an OpenAI-compatible LLM endpoint before running video analysis.
