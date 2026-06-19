@@ -1225,7 +1225,8 @@ h2 {
 }
 
 .task-grid,
-.sample-library-layout {
+.sample-library-layout,
+.imitation-layout {
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 18px;
@@ -1341,6 +1342,52 @@ h2 {
   resize: vertical;
 }
 
+.imitation-control-panel,
+.imitation-project-panel {
+  align-self: start;
+}
+
+.imitation-direction {
+  min-height: 118px;
+}
+
+.imitation-options,
+.imitation-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.imitation-project-list {
+  max-height: 540px;
+}
+
+.imitation-result-panel {
+  margin-top: 18px;
+}
+
+.imitation-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.imitation-command {
+  max-height: 120px;
+}
+
+.imitation-detail-grid article {
+  border: 1px solid var(--neutral-200);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfcfa;
+}
+
+.imitation-detail-grid h3 {
+  margin-top: 0;
+}
+
 @media (max-width: 880px) {
   .dashboard-hero {
     align-items: flex-start;
@@ -1365,9 +1412,11 @@ h2 {
   .idea-layout,
   .idea-grid,
   .style-grid,
-  .settings-layout,
-  .task-grid,
-  .sample-library-layout {
+    .settings-layout,
+    .task-grid,
+    .sample-library-layout,
+    .imitation-layout,
+    .imitation-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1425,10 +1474,13 @@ h2 {
   .idea-layout,
   .idea-grid,
   .style-grid,
-  .settings-layout,
-  .task-grid,
-  .sample-library-layout,
-  .video-row {
+    .settings-layout,
+    .task-grid,
+    .sample-library-layout,
+    .imitation-layout,
+    .imitation-options,
+    .imitation-detail-grid,
+    .video-row {
     grid-template-columns: 1fr;
   }
 
@@ -1459,6 +1511,10 @@ h2 {
   }
 
   .idea-preview-header {
+    flex-direction: column;
+  }
+
+  .imitation-result-header {
     flex-direction: column;
   }
 

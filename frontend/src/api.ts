@@ -4,6 +4,8 @@ import type {
   DashboardData,
   DashboardJob,
   HealthCheckResponse,
+  ImitationFactoryResponse,
+  ImitationProject,
   IdeaCard,
   MonitorRunResult,
   MonitorStatus,
@@ -501,6 +503,50 @@ export async function exportScriptMarkdown(scriptId: string): Promise<{ filename
   if (!response.ok) {
     throw new Error("Unable to export script markdown.");
   }
+
+  return (await response.json()) as { filename: string; markdown: string };
+}
+
+export async function fetchImitationFactory(): Promise<ImitationFactoryResponse> {
+  const response = await fetch("/api/imitation-factory");
+
+  await requireOk(response, "Unable to load imitation factory.");
+
+  const data = (await response.json()) as Partial<ImitationFactoryResponse>;
+  return {
+    projects: data.projects ?? [],
+    reports: data.reports ?? [],
+    ideas: data.ideas ?? []
+  };
+}
+
+export async function createImitationProject(payload: {
+  report_id: string;
+  idea_id?: string | null;
+  direction: string;
+  output_type: "short_fiction" | "story_recap" | "short_drama" | "interactive";
+  similarity_level: "low" | "medium" | "high";
+  target_length: string;
+  keep_narration: boolean;
+}): Promise<ImitationProject> {
+  const response = await fetch("/api/imitation-factory/projects", {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to create imitation project.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function exportImitationMarkdown(projectId: string): Promise<{ filename: string; markdown: string }> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/markdown`);
+
+  await requireOk(response, "Unable to export imitation reference.");
 
   return (await response.json()) as { filename: string; markdown: string };
 }

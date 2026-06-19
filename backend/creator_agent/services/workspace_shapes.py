@@ -9,6 +9,7 @@ def empty_workspace_data() -> dict[str, Any]:
         "style_profiles": [],
         "copy_drafts": [],
         "script_drafts": [],
+        "imitation_projects": [],
         "sample_analyses": [],
         "jobs": [],
         "reports": [],

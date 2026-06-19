@@ -155,6 +155,79 @@ def test_sample_library_updates_tags_favorite_and_merges_style(tmp_path, monkeyp
     assert library.json()["samples"][0]["id"] == "sample-1"
 
 
+def test_imitation_factory_builds_inkos_reference_package(tmp_path, monkeypatch):
+    monkeypatch.setenv("YCA_WORKSPACE_DATA_PATH", str(tmp_path / "workspace-data.json"))
+    _write_workspace(
+        tmp_path / "workspace-data.json",
+        {
+            "channels": [],
+            "recent_videos": [],
+            "idea_cards": [],
+            "reports": [
+                {
+                    "id": "report-1",
+                    "youtube_video_id": "video-1",
+                    "video_url": "https://www.youtube.com/watch?v=video-1",
+                    "video_title": "Original story recap",
+                    "summary": "A low-status hero triggers a hidden reward loop.",
+                    "creative_breakdown": {
+                        "topic_type": "story_recap",
+                        "title_hook": "Everyone underestimated the hidden rule.",
+                        "opening_hook": "Open on public humiliation before explaining the system.",
+                        "structure": ["Public pressure", "Tiny trigger", "First payoff", "Bigger reversal"],
+                        "emotional_curve": ["Pressure", "Curiosity", "Payoff", "Suspense"],
+                    },
+                    "growth_judgement": {
+                        "score": 88,
+                        "reasons": ["Strong information gap", "Clear public payoff"],
+                    },
+                    "idea_cards": [
+                        {
+                            "title": "Hidden reward loop in a new setting",
+                            "angle": "Turn a small kindness into a status reversal.",
+                            "why_it_works": "The audience waits for the public payoff.",
+                            "outline": ["Show the consequence", "Reveal the hidden rule"],
+                            "risk_notes": "Change the reward names and scene order.",
+                        }
+                    ],
+                    "comment_insights": {"status": "not_configured"},
+                    "created_at": "2026-06-09T12:00:00+00:00",
+                }
+            ],
+            "sample_analyses": [],
+            "jobs": [],
+        },
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/imitation-factory/projects",
+        json={
+            "report_id": "report-1",
+            "idea_id": "report-1-idea-1",
+            "direction": "写成一个现代都市短片小说，主角是被低估的实习生。",
+            "output_type": "short_fiction",
+            "similarity_level": "high",
+            "target_length": "3000 Chinese characters",
+            "keep_narration": True,
+        },
+    )
+    listed = client.get("/api/imitation-factory")
+
+    assert response.status_code == 200
+    project = response.json()["project"]
+    assert project["id"].startswith("imitate-")
+    assert project["source_report_id"] == "report-1"
+    assert project["risk_level"] == "needs_review"
+    assert "inkos short run" in project["inkos_command"]
+    assert "必须改写" in project["reference_markdown"]
+    assert "禁止复用原视频角色名" in project["reference_markdown"]
+    assert "Public pressure" in project["structure_template"]
+    assert listed.status_code == 200
+    assert listed.json()["projects"][0]["id"] == project["id"]
+    assert listed.json()["reports"][0]["id"] == "report-1"
+
+
 def test_health_checks_report_required_integrations(tmp_path, monkeypatch):
     monkeypatch.setenv("YCA_WORKSPACE_DATA_PATH", str(tmp_path / "workspace-data.json"))
     monkeypatch.setenv("YCA_WORKSPACE_SETTINGS_PATH", str(tmp_path / "workspace-settings.json"))

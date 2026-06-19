@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { analyzeSample, analyzeVideo, fetchDashboard, syncChannel } from "./api";
 import Dashboard from "./components/Dashboard";
 import IdeaLab from "./components/IdeaLab";
+import ImitationFactory from "./components/ImitationFactory";
 import Settings from "./components/Settings";
 import SampleLibrary from "./components/SampleLibrary";
 import ScriptStudio from "./components/ScriptStudio";
@@ -17,6 +18,7 @@ type View =
   | "video-report"
   | "sample-library"
   | "idea-lab"
+  | "imitation-factory"
   | "style-library"
   | "script-studio"
   | "settings";
@@ -30,6 +32,7 @@ const navLabels: Record<Language, Record<View, string>> = {
     "video-report": "\u89c6\u9891\u62a5\u544a",
     "sample-library": "\u6837\u672c\u5e93",
     "idea-lab": "\u9009\u9898\u5b9e\u9a8c\u5ba4",
+    "imitation-factory": "\u4eff\u5199\u5de5\u5382",
     "style-library": "\u98ce\u683c\u5e93",
     "script-studio": "\u521b\u4f5c\u53f0",
     settings: "\u8bbe\u7f6e"
@@ -40,6 +43,7 @@ const navLabels: Record<Language, Record<View, string>> = {
     "video-report": "Video Report",
     "sample-library": "Samples",
     "idea-lab": "Idea Lab",
+    "imitation-factory": "Imitation Factory",
     "style-library": "Style Library",
     "script-studio": "Script Studio",
     settings: "Settings"
@@ -156,6 +160,7 @@ export default function App() {
     { view: "video-report" },
     { view: "sample-library" },
     { view: "idea-lab" },
+    { view: "imitation-factory" },
     { view: "style-library" },
     { view: "script-studio" },
     { view: "settings" }
@@ -220,6 +225,7 @@ export default function App() {
       {activeView === "video-report" && <VideoReport language={language} />}
       {activeView === "sample-library" && <SampleLibrary language={language} />}
       {activeView === "idea-lab" && <IdeaLab language={language} />}
+      {activeView === "imitation-factory" && <ImitationFactory language={language} />}
       {activeView === "style-library" && <StyleLibrary language={language} />}
       {activeView === "script-studio" && <ScriptStudio language={language} />}
       {activeView === "settings" && <Settings language={language} />}

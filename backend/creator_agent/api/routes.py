@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from creator_agent.config import Settings
 from creator_agent.services.cache_service import CacheService
 from creator_agent.services.health_check_service import HealthCheckService
+from creator_agent.services.imitation_factory_service import ImitationFactoryService
 from creator_agent.services.monitor_service import MonitorService
 from creator_agent.services.sample_library_service import SampleLibraryService
 from creator_agent.services.script_studio_service import ScriptStudioService
@@ -69,6 +70,16 @@ class ApplyStyleRequest(BaseModel):
     style_id: str
     idea_id: str
     draft_type: str = "opening_script"
+
+
+class CreateImitationRequest(BaseModel):
+    report_id: str
+    idea_id: str | None = None
+    direction: str
+    output_type: str = "short_fiction"
+    similarity_level: str = "medium"
+    target_length: str = "2500-4000 Chinese characters"
+    keep_narration: bool = True
 
 
 @router.get("/health")
@@ -437,3 +448,38 @@ def apply_style(request: ApplyStyleRequest) -> dict:
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/imitation-factory")
+def imitation_factory() -> dict:
+    return ImitationFactoryService().list_projects()
+
+
+@router.post("/imitation-factory/projects")
+def create_imitation_project(request: CreateImitationRequest) -> dict:
+    if request.similarity_level not in {"low", "medium", "high"}:
+        raise HTTPException(status_code=422, detail="Unknown similarity level.")
+    if request.output_type not in {"short_fiction", "story_recap", "short_drama", "interactive"}:
+        raise HTTPException(status_code=422, detail="Unknown output type.")
+    if not request.direction.strip():
+        raise HTTPException(status_code=422, detail="Direction is required.")
+    try:
+        return ImitationFactoryService().create_project(
+            report_id=request.report_id,
+            idea_id=request.idea_id,
+            direction=request.direction,
+            output_type=request.output_type,
+            similarity_level=request.similarity_level,
+            target_length=request.target_length,
+            keep_narration=request.keep_narration,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/imitation-factory/projects/{project_id}/markdown")
+def export_imitation_markdown(project_id: str) -> dict:
+    try:
+        return ImitationFactoryService().export_markdown(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

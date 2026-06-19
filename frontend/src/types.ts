@@ -118,6 +118,66 @@ export interface ScriptDraft {
   created_at: string;
 }
 
+export interface ImitationReportOption {
+  id: string;
+  video_title: string;
+  video_url: string;
+  created_at: string;
+}
+
+export interface ImitationIdeaOption {
+  id: string;
+  title: string;
+  source_report_id: string;
+}
+
+export interface ImitationQualityCheck {
+  key: string;
+  label: string;
+  target: string;
+}
+
+export interface ImitationProject {
+  id: string;
+  name: string;
+  source_report_id: string;
+  source_idea_id: string;
+  source_video_title: string;
+  source_video_url: string;
+  direction: string;
+  output_type: "short_fiction" | "story_recap" | "short_drama" | "interactive" | string;
+  similarity_level: "low" | "medium" | "high" | string;
+  target_length: string;
+  keep_narration: boolean;
+  reference_markdown: string;
+  inkos_command: string;
+  inkos_args?: string[];
+  structure_template: string[];
+  emotional_curve: string[];
+  style_fingerprint: {
+    average_sentence_length: number;
+    paragraph_count: number;
+    narration_person: string;
+    pacing_rule: string;
+    transition_style: string;
+    opening_formula?: string;
+    structure_density?: number;
+  };
+  reuse_constraints: string[];
+  anti_copy_rules: string[];
+  source_script_excerpt: string;
+  quality_checks: ImitationQualityCheck[];
+  risk_level: "low" | "medium" | "needs_review" | string;
+  inkos_status: string;
+  created_at: string;
+}
+
+export interface ImitationFactoryResponse {
+  projects: ImitationProject[];
+  reports: ImitationReportOption[];
+  ideas: ImitationIdeaOption[];
+}
+
 export interface DashboardJob {
   id?: string;
   status?: string;
