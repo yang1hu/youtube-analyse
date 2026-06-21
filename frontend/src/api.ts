@@ -1,4 +1,8 @@
 import type {
+  BulkProjectMarkdownExport,
+  BulkProjectCheckResult,
+  BulkProjectInkosResult,
+  BulkProjectStatusResult,
   CacheInfo,
   CopyDraft,
   DashboardData,
@@ -6,11 +10,14 @@ import type {
   HealthCheckResponse,
   ImitationFactoryResponse,
   ImitationProject,
+  FavoriteStructureTemplate,
   IdeaCard,
   MonitorRunResult,
   MonitorStatus,
   SampleAnalysis,
   ScriptDraft,
+  StoryWorkbenchItem,
+  StoryWorkbenchAnalysis,
   StyleProfile,
   TaskCenterResponse,
   TranscriptBundle,
@@ -43,6 +50,16 @@ async function requireOk(response: Response, fallback: string): Promise<void> {
   }
 }
 
+export class InkOSRunApiError extends Error {
+  project?: ImitationProject;
+
+  constructor(message: string, project?: ImitationProject) {
+    super(message);
+    this.name = "InkOSRunApiError";
+    this.project = project;
+  }
+}
+
 export async function fetchDashboard(): Promise<DashboardData> {
   const response = await fetch("/api/dashboard");
 
@@ -55,7 +72,46 @@ export async function fetchDashboard(): Promise<DashboardData> {
     recent_videos: data.recent_videos ?? [],
     idea_cards: data.idea_cards ?? [],
     jobs: data.jobs ?? [],
-    comment_collector_status: data.comment_collector_status ?? "unknown"
+    comment_collector_status: data.comment_collector_status ?? "unknown",
+    reports_count: data.reports_count ?? 0,
+    imitation_projects_count: data.imitation_projects_count ?? 0,
+    pending_drafts_count: data.pending_drafts_count ?? 0,
+    publishable_drafts_count: data.publishable_drafts_count ?? 0,
+    imitation_project_summaries: data.imitation_project_summaries ?? [],
+    favorite_structure_templates: data.favorite_structure_templates ?? [],
+    creation_pipeline: data.creation_pipeline,
+    creation_quality_metrics: data.creation_quality_metrics,
+    creation_funnel: data.creation_funnel,
+    weekly_production_metrics: data.weekly_production_metrics,
+    topic_candidates: data.topic_candidates ?? []
+  };
+}
+
+export async function loadDemoWorkspace(): Promise<DashboardData> {
+  const response = await fetch("/api/dashboard/demo", { method: "POST" });
+
+  await requireOk(response, "Unable to load demo workspace.");
+
+  const data = (await response.json()) as { dashboard?: Partial<DashboardData> };
+  const dashboard = data.dashboard ?? {};
+
+  return {
+    channels: dashboard.channels ?? [],
+    recent_videos: dashboard.recent_videos ?? [],
+    idea_cards: dashboard.idea_cards ?? [],
+    jobs: dashboard.jobs ?? [],
+    comment_collector_status: dashboard.comment_collector_status ?? "unknown",
+    reports_count: dashboard.reports_count ?? 0,
+    imitation_projects_count: dashboard.imitation_projects_count ?? 0,
+    pending_drafts_count: dashboard.pending_drafts_count ?? 0,
+    publishable_drafts_count: dashboard.publishable_drafts_count ?? 0,
+    imitation_project_summaries: dashboard.imitation_project_summaries ?? [],
+    favorite_structure_templates: dashboard.favorite_structure_templates ?? [],
+    creation_pipeline: dashboard.creation_pipeline,
+    creation_quality_metrics: dashboard.creation_quality_metrics,
+    creation_funnel: dashboard.creation_funnel,
+    weekly_production_metrics: dashboard.weekly_production_metrics,
+    topic_candidates: dashboard.topic_candidates ?? []
   };
 }
 
@@ -145,6 +201,134 @@ export async function analyzeVideo(videoUrl: string): Promise<void> {
   if (!response.ok) {
     throw new Error("Unable to analyze video.");
   }
+}
+
+export async function batchAnalyzeVideos(
+  limit = 10,
+  prioritizeCandidates = false,
+  videoUrls: string[] = []
+): Promise<{ tasks: DashboardJob[]; queued_count: number; skipped_count: number; prioritized: boolean }> {
+  const response = await fetch("/api/tasks/video-analysis/batch-start", {
+    body: JSON.stringify({ limit, prioritize_candidates: prioritizeCandidates, video_urls: videoUrls }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to batch analyze videos.");
+
+  const data = (await response.json()) as { tasks?: DashboardJob[]; queued_count?: number; skipped_count?: number; prioritized?: boolean };
+  return {
+    tasks: data.tasks ?? [],
+    queued_count: data.queued_count ?? 0,
+    skipped_count: data.skipped_count ?? 0,
+    prioritized: data.prioritized ?? false
+  };
+}
+
+export async function favoriteStructureTemplate(projectId: string): Promise<void> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/favorite-template`, {
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to favorite structure template.");
+}
+
+export async function unfavoriteStructureTemplate(projectId: string): Promise<void> {
+  const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/favorite-template`, {
+    method: "DELETE"
+  });
+
+  await requireOk(response, "Unable to remove structure template.");
+}
+
+export async function bulkUpdateProjectStatus(projectIds: string[], status: string): Promise<BulkProjectStatusResult> {
+  const response = await fetch("/api/projects/bulk-status", {
+    body: JSON.stringify({ project_ids: projectIds, status }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to update selected projects.");
+
+  return (await response.json()) as BulkProjectStatusResult;
+}
+
+export async function bulkExportProjectMarkdown(
+  projectIds: string[],
+  includeReference = true,
+  includeLatestDraft = true
+): Promise<BulkProjectMarkdownExport> {
+  const response = await fetch("/api/projects/bulk-markdown", {
+    body: JSON.stringify({
+      project_ids: projectIds,
+      include_reference: includeReference,
+      include_latest_draft: includeLatestDraft
+    }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to export selected projects.");
+
+  return (await response.json()) as BulkProjectMarkdownExport;
+}
+
+export async function bulkCheckProjectDrafts(projectIds: string[]): Promise<BulkProjectCheckResult> {
+  const response = await fetch("/api/projects/bulk-check", {
+    body: JSON.stringify({ project_ids: projectIds }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to check selected drafts.");
+
+  return (await response.json()) as BulkProjectCheckResult;
+}
+
+export async function bulkRunProjectInkos(projectIds: string[], skipPublishable = true): Promise<BulkProjectInkosResult> {
+  const response = await fetch("/api/projects/bulk-inkos", {
+    body: JSON.stringify({ project_ids: projectIds, skip_publishable: skipPublishable }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to run InkOS for selected projects.");
+
+  return (await response.json()) as BulkProjectInkosResult;
+}
+
+export async function updateStructureTemplate(
+  templateId: string,
+  patch: {
+    name?: string;
+    tags?: string[];
+    notes?: string;
+    applicable_topics?: string[];
+    success_cases?: string[];
+  }
+): Promise<FavoriteStructureTemplate> {
+  const response = await fetch(`/api/projects/templates/${encodeURIComponent(templateId)}`, {
+    body: JSON.stringify(patch),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+
+  await requireOk(response, "Unable to update structure template.");
+
+  const data = (await response.json()) as { template: FavoriteStructureTemplate };
+  return data.template;
 }
 
 export async function analyzeSample(videoUrl: string, videoTitle = "", videoId = ""): Promise<DashboardJob> {
@@ -425,6 +609,64 @@ export async function fetchReportTranscript(reportId: string): Promise<Transcrip
   return (await response.json()) as TranscriptBundle;
 }
 
+export async function fetchStoryWorkbench(reportId: string): Promise<StoryWorkbenchItem | null> {
+  const response = await fetch(`/api/story-workbench/reports/${encodeURIComponent(reportId)}`);
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as { story_workbench?: StoryWorkbenchItem };
+  return data.story_workbench ?? null;
+}
+
+export async function saveStoryWorkbench(reportId: string, cleanedText: string): Promise<StoryWorkbenchItem> {
+  const response = await fetch(`/api/story-workbench/reports/${encodeURIComponent(reportId)}`, {
+    body: JSON.stringify({ cleaned_text: cleanedText }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "PUT"
+  });
+
+  await requireOk(response, "Unable to save cleaned story script.");
+
+  const data = (await response.json()) as { story_workbench: StoryWorkbenchItem };
+  return data.story_workbench;
+}
+
+export async function restoreStoryWorkbenchVersion(reportId: string, versionId: string): Promise<StoryWorkbenchItem> {
+  const response = await fetch(
+    `/api/story-workbench/reports/${encodeURIComponent(reportId)}/versions/${encodeURIComponent(versionId)}/restore`,
+    {
+      method: "POST"
+    }
+  );
+
+  await requireOk(response, "Unable to restore cleaned story version.");
+
+  const data = (await response.json()) as { story_workbench: StoryWorkbenchItem };
+  return data.story_workbench;
+}
+
+export async function updateStoryWorkbenchAnalysis(
+  reportId: string,
+  patch: Partial<StoryWorkbenchAnalysis>
+): Promise<StoryWorkbenchItem> {
+  const response = await fetch(`/api/story-workbench/reports/${encodeURIComponent(reportId)}/analysis`, {
+    body: JSON.stringify(patch),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+
+  await requireOk(response, "Unable to update story structure.");
+
+  const data = (await response.json()) as { story_workbench: StoryWorkbenchItem };
+  return data.story_workbench;
+}
+
 export async function fetchStyles(): Promise<{ style_profiles: StyleProfile[]; copy_drafts: CopyDraft[] }> {
   const response = await fetch("/api/styles");
 
@@ -510,19 +752,24 @@ export async function exportScriptMarkdown(scriptId: string): Promise<{ filename
 export async function fetchImitationFactory(): Promise<ImitationFactoryResponse> {
   const response = await fetch("/api/imitation-factory");
 
-  await requireOk(response, "Unable to load imitation factory.");
+  await requireOk(response, "Unable to load creation workspace.");
 
   const data = (await response.json()) as Partial<ImitationFactoryResponse>;
   return {
     projects: data.projects ?? [],
     reports: data.reports ?? [],
-    ideas: data.ideas ?? []
+    ideas: data.ideas ?? [],
+    templates: data.templates ?? [],
+    styles: data.styles ?? [],
+    inkos_status: data.inkos_status
   };
 }
 
 export async function createImitationProject(payload: {
   report_id: string;
   idea_id?: string | null;
+  template_id?: string | null;
+  style_id?: string | null;
   direction: string;
   output_type: "short_fiction" | "story_recap" | "short_drama" | "interactive";
   similarity_level: "low" | "medium" | "high";
@@ -537,7 +784,7 @@ export async function createImitationProject(payload: {
     method: "POST"
   });
 
-  await requireOk(response, "Unable to create imitation project.");
+  await requireOk(response, "Unable to create creation project.");
 
   const data = (await response.json()) as { project: ImitationProject };
   return data.project;
@@ -546,9 +793,118 @@ export async function createImitationProject(payload: {
 export async function exportImitationMarkdown(projectId: string): Promise<{ filename: string; markdown: string }> {
   const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/markdown`);
 
-  await requireOk(response, "Unable to export imitation reference.");
+  await requireOk(response, "Unable to export creation brief.");
 
   return (await response.json()) as { filename: string; markdown: string };
+}
+
+export async function saveImitationDraft(projectId: string, payload: { draft_text: string; title?: string }): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts`, {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to check creation draft.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function runImitationInkos(projectId: string, referenceRunId?: string): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/inkos/run`, {
+    body: JSON.stringify({ reference_run_id: referenceRunId || null }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    try {
+      const data = (await response.json()) as {
+        detail?: string | { message?: string; project?: ImitationProject };
+      };
+      if (typeof data.detail === "object" && data.detail?.project) {
+        throw new InkOSRunApiError(data.detail.message ?? "Unable to run InkOS.", data.detail.project);
+      }
+      throw new Error(typeof data.detail === "string" ? data.detail : "Unable to run InkOS.");
+    } catch (error) {
+      if (error instanceof InkOSRunApiError || error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Unable to run InkOS.");
+    }
+  }
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function exportImitationDraftMarkdown(projectId: string, draftId: string): Promise<{ filename: string; markdown: string }> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(draftId)}/markdown`);
+
+  await requireOk(response, "Unable to export creation draft.");
+
+  return (await response.json()) as { filename: string; markdown: string };
+}
+
+export async function updateImitationDraftStatus(projectId: string, draftId: string, status: string): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(draftId)}`, {
+    body: JSON.stringify({ status }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "PATCH"
+  });
+
+  await requireOk(response, "Unable to update creation draft.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function reduceImitationDraftRisk(projectId: string, draftId: string): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(draftId)}/reduce-risk`, {
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to reduce draft risk.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function rewriteImitationDraft(projectId: string, draftId: string, mode: string): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(draftId)}/rewrite`, {
+    body: JSON.stringify({ mode }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to rewrite draft.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
+}
+
+export async function rewriteImitationRiskSegment(projectId: string, draftId: string, segmentIndex: number): Promise<ImitationProject> {
+  const response = await fetch(`/api/imitation-factory/projects/${encodeURIComponent(projectId)}/drafts/${encodeURIComponent(draftId)}/rewrite-risk-segment`, {
+    body: JSON.stringify({ segment_index: segmentIndex }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to rewrite risk segment.");
+
+  const data = (await response.json()) as { project: ImitationProject };
+  return data.project;
 }
 
 export async function learnLatestStyle(name?: string): Promise<StyleProfile> {
@@ -563,6 +919,21 @@ export async function learnLatestStyle(name?: string): Promise<StyleProfile> {
   if (!response.ok) {
     throw new Error("Unable to learn style from latest report.");
   }
+
+  const data = (await response.json()) as { style_profile: StyleProfile };
+  return data.style_profile;
+}
+
+export async function mergeReportStyles(reportIds: string[], name?: string): Promise<StyleProfile> {
+  const response = await fetch("/api/styles/merge-reports", {
+    body: JSON.stringify({ report_ids: reportIds, name: name?.trim() || null }),
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  await requireOk(response, "Unable to merge report styles.");
 
   const data = (await response.json()) as { style_profile: StyleProfile };
   return data.style_profile;

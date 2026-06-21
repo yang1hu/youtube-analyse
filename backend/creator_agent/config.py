@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     transcript_cache_dir: str = str(BACKEND_DIR / ".runtime" / "transcripts")
     translation_cache_dir: str = str(BACKEND_DIR / ".runtime" / "translations")
     sample_cache_dir: str = str(BACKEND_DIR / ".runtime" / "samples")
+    inkos_command: str = "inkos"
+    inkos_project_dir: str = str(BACKEND_DIR / ".runtime" / "inkos")
+    inkos_timeout_seconds: int = 600
     openai_api_key: str | None = None
     openai_base_url: str = "https://www.inroi.shop/v1"
     openai_translation_model: str = "gpt-5.5"

@@ -77,6 +77,7 @@ export interface StyleProfile {
   id: string;
   name: string;
   source_report_id?: string;
+  source_report_ids?: string[];
   source_sample_ids?: string[];
   source_video_title?: string;
   source_video_url?: string;
@@ -137,6 +138,150 @@ export interface ImitationQualityCheck {
   target: string;
 }
 
+export interface ImitationSimilarityReport {
+  text_overlap_percent: number;
+  repeated_phrases: string[];
+  reused_entities?: string[];
+  structure_similarity: number;
+  style_similarity: number;
+  plot_similarity?: number;
+  pacing_similarity?: number;
+  semantic_similarity?: number;
+  risk_level: "low" | "medium" | "high" | string;
+  risk_segments?: ImitationRiskSegment[];
+  quality_gate?: ImitationQualityGate;
+  recommendations: string[];
+}
+
+export interface ImitationQualityGate {
+  status: "pass" | "needs_revision" | "blocked" | string;
+  passed: boolean;
+  summary: string;
+  target_similarity_level: string;
+  checks: ImitationQualityGateCheck[];
+  failed_checks: string[];
+  next_action: string;
+}
+
+export interface ImitationQualityGateCheck {
+  key: string;
+  label: string;
+  passed: boolean;
+  value: number | string;
+  target: string;
+}
+
+export interface ImitationRiskSegment {
+  risk_type: string;
+  severity: "low" | "medium" | "high" | string;
+  action_level?: "must_fix" | "should_fix" | "acceptable" | string;
+  action_label?: string;
+  draft_excerpt: string;
+  source_excerpt: string;
+  matched_text?: string;
+  draft_index?: number;
+  recommendation: string;
+  similarity_reason?: string;
+  suggested_rewrite_mode?: string;
+  rewrite_goal?: string;
+  must_replace?: string[];
+  can_keep?: string[];
+}
+
+export interface ImitationDraft {
+  id: string;
+  title: string;
+  draft_text: string;
+  source?: "manual" | "inkos" | string;
+  status?: "publishable" | "needs_review" | "needs_revision" | string;
+  similarity_report: ImitationSimilarityReport;
+  inkos_result?: Record<string, unknown> & {
+    parent_draft_id?: string;
+    rewrite_strategy?: string;
+    rewrite_comparison?: ImitationRewriteComparison;
+  };
+  created_at: string;
+}
+
+export interface ImitationRewriteComparison {
+  mode: string;
+  parent_draft_id: string;
+  before: ImitationRewriteComparisonSnapshot;
+  after: ImitationRewriteComparisonSnapshot;
+  delta: {
+    text_overlap_percent: number;
+    semantic_similarity?: number;
+    risk_segment_count: number;
+  };
+}
+
+export interface ImitationRewriteComparisonSnapshot {
+  risk_level: string;
+  quality_gate_status: string;
+  text_overlap_percent: number;
+  semantic_similarity?: number;
+  risk_segment_count: number;
+}
+
+export interface ImitationSimilarityHistoryItem {
+  id: string;
+  draft_id: string;
+  draft_title: string;
+  draft_source: string;
+  risk_level: string;
+  text_overlap_percent: number;
+  structure_similarity: number;
+  style_similarity: number;
+  repeated_phrase_count: number;
+  reused_entity_count: number;
+  risk_segment_count: number;
+  created_at: string;
+}
+
+export interface InkosRunRecord {
+  id?: string;
+  status: "complete" | "failed" | string;
+  command?: string[];
+  run_dir?: string;
+  request?: {
+    project_id?: string;
+    source_report_id?: string;
+    source_video_title?: string;
+    direction?: string;
+    output_type?: string;
+    similarity_level?: string;
+    target_length?: string;
+    keep_narration?: boolean;
+    reference_path?: string;
+    reference_length?: number;
+    reference_preview?: string;
+    reference_markdown?: string;
+    reference_run_id?: string;
+    generation_preview?: InkosGenerationPreview;
+  };
+  result?: Record<string, unknown>;
+  error_message?: string;
+  draft_preview?: string;
+  stdout?: string;
+  stderr?: string;
+  started_at?: string;
+  completed_at?: string;
+  ran_at?: string;
+  elapsed_ms?: number;
+}
+
+export interface InkosGenerationPreview {
+  reference_length: number;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_total_tokens: number;
+  target_length: string;
+  similarity_level: string;
+  keep_narration: boolean;
+  risk_notes: string[];
+  checklist: string[];
+}
+
 export interface ImitationProject {
   id: string;
   name: string;
@@ -144,12 +289,17 @@ export interface ImitationProject {
   source_idea_id: string;
   source_video_title: string;
   source_video_url: string;
+  source_channel_title?: string;
+  source_topic_type?: string;
+  source_style_id?: string;
+  source_style_name?: string;
   direction: string;
   output_type: "short_fiction" | "story_recap" | "short_drama" | "interactive" | string;
   similarity_level: "low" | "medium" | "high" | string;
   target_length: string;
   keep_narration: boolean;
   reference_markdown: string;
+  inkos_preview?: InkosGenerationPreview;
   inkos_command: string;
   inkos_args?: string[];
   structure_template: string[];
@@ -166,9 +316,17 @@ export interface ImitationProject {
   reuse_constraints: string[];
   anti_copy_rules: string[];
   source_script_excerpt: string;
+  story_workbench_source?: string;
+  story_workbench_analysis?: Partial<StoryWorkbenchAnalysis>;
+  source_style_profile?: Partial<StyleProfile>;
   quality_checks: ImitationQualityCheck[];
   risk_level: "low" | "medium" | "needs_review" | string;
   inkos_status: string;
+  generated_drafts?: ImitationDraft[];
+  latest_similarity_report?: ImitationSimilarityReport;
+  similarity_report_history?: ImitationSimilarityHistoryItem[];
+  last_inkos_run?: InkosRunRecord;
+  inkos_run_history?: InkosRunRecord[];
   created_at: string;
 }
 
@@ -176,6 +334,19 @@ export interface ImitationFactoryResponse {
   projects: ImitationProject[];
   reports: ImitationReportOption[];
   ideas: ImitationIdeaOption[];
+  templates?: FavoriteStructureTemplate[];
+  styles?: StyleProfile[];
+  inkos_status?: InkosStatus;
+}
+
+export interface InkosStatus {
+  configured: boolean;
+  command: string;
+  executable: string;
+  resolved_path: string;
+  project_dir: string;
+  timeout_seconds: number;
+  message: string;
 }
 
 export interface DashboardJob {
@@ -199,9 +370,200 @@ export interface DashboardJob {
 export interface DashboardData {
   channels: Channel[];
   recent_videos: RecentVideo[];
+  topic_candidates?: TopicCandidate[];
   idea_cards: IdeaCard[];
   jobs: DashboardJob[];
   comment_collector_status: string;
+  reports_count?: number;
+  imitation_projects_count?: number;
+  pending_drafts_count?: number;
+  publishable_drafts_count?: number;
+  imitation_project_summaries?: ImitationProjectSummary[];
+  favorite_structure_templates?: FavoriteStructureTemplate[];
+  creation_pipeline?: CreationPipeline;
+  creation_quality_metrics?: CreationQualityMetrics;
+  creation_funnel?: CreationFunnel;
+  weekly_production_metrics?: WeeklyProductionMetrics;
+}
+
+export interface CreationQualityMetrics {
+  draft_count: number;
+  quality_gate_pass_rate: number;
+  average_text_overlap_percent: number;
+  average_rewrite_count: number;
+  high_risk_rate: number;
+  failed_gate_reasons?: FailedGateReason[];
+}
+
+export interface FailedGateReason {
+  key: string;
+  label: string;
+  count: number;
+  draft_percent: number;
+  next_action: string;
+}
+
+export interface WeeklyProductionMetrics {
+  window_days: number;
+  window_start: string;
+  window_end: string;
+  analyzed_report_count: number;
+  created_project_count: number;
+  generated_draft_count: number;
+  publishable_draft_count: number;
+}
+
+export interface CreationFunnel {
+  steps: CreationFunnelStep[];
+  bottleneck?: CreationFunnelBottleneck | null;
+}
+
+export interface CreationFunnelStep {
+  key: string;
+  label: string;
+  count: number;
+  conversion_percent: number;
+}
+
+export interface CreationFunnelBottleneck {
+  from: string;
+  to: string;
+  conversion_percent: number;
+  summary?: string;
+  next_action?: string;
+}
+
+export interface TopicCandidate extends RecentVideo {
+  score: number;
+  reasons: string[];
+  viral_potential?: number;
+  story_fit?: number;
+  structure_reuse_value?: number;
+  risk_flags?: string[];
+  topic_group?: string;
+  freshness_bucket?: string;
+  view_bucket?: string;
+  recommendation_summary?: string;
+  recommended_action?: string;
+  recommendation_level?: "priority" | "trial" | "watch" | "low" | string;
+}
+
+export interface CreationPipeline {
+  steps: CreationPipelineStep[];
+  next_step: string;
+  next_action?: CreationPipelineNextAction;
+  pending_video_count: number;
+  active_job_count: number;
+  ready_report_count: number;
+  cleaned_story_count?: number;
+  structured_story_count?: number;
+  project_count: number;
+  pending_draft_count: number;
+  publishable_draft_count: number;
+}
+
+export interface CreationPipelineNextAction {
+  label: string;
+  description: string;
+  target_view: "tasks" | "video-report" | "imitation-factory" | "project-library" | "settings" | "dashboard" | string;
+  action_type: "open_view" | "sync_channel" | string;
+}
+
+export interface CreationPipelineStep {
+  key: string;
+  status: "complete" | "pending" | string;
+  count: number;
+  action?: "settings" | "sync" | "video-report" | "imitation-factory" | "project-library" | string;
+}
+
+export interface ImitationProjectSummary {
+  id: string;
+  name: string;
+  source_video_title: string;
+  source_video_url: string;
+  source_channel_title: string;
+  source_topic_type: string;
+  direction: string;
+  output_type: string;
+  similarity_level: string;
+  inkos_status: string;
+  draft_count: number;
+  latest_draft_status: string;
+  latest_risk_level: string;
+  latest_quality_gate_status?: string;
+  latest_quality_gate_summary?: string;
+  text_overlap_percent: number;
+  production_stage?: "reference" | "needs_review" | "needs_revision" | "publishable" | "discarded" | string;
+  production_priority?: "urgent" | "high" | "medium" | "low" | string;
+  production_priority_reason?: string;
+  recommended_next_action?: string;
+  template_favorited?: boolean;
+  updated_at?: string;
+  created_at: string;
+}
+
+export interface BulkProjectStatusResult {
+  status: string;
+  updated_count: number;
+  skipped_count: number;
+  updated: { project_id: string; draft_id: string; status: string }[];
+  skipped: { project_id: string; reason: string }[];
+}
+
+export interface BulkProjectMarkdownExport {
+  filename: string;
+  markdown: string;
+  exported_count: number;
+  skipped_count: number;
+  exported: { project_id: string; name: string }[];
+  skipped: { project_id: string; reason: string }[];
+}
+
+export interface BulkProjectCheckResult {
+  checked_count: number;
+  skipped_count: number;
+  checked: {
+    project_id: string;
+    draft_id: string;
+    status: string;
+    risk_level: string;
+    quality_gate_status: string;
+    text_overlap_percent: number;
+  }[];
+  skipped: { project_id: string; reason: string }[];
+}
+
+export interface BulkProjectInkosResult {
+  generated_count: number;
+  skipped_count: number;
+  failed_count: number;
+  generated: { project_id: string; draft_id: string; status: string; title: string }[];
+  skipped: { project_id: string; reason: string }[];
+  failed: { project_id: string; reason: string; message?: string }[];
+}
+
+export interface FavoriteStructureTemplate {
+  id: string;
+  source_project_id: string;
+  name: string;
+  source_video_title: string;
+  source_channel_title: string;
+  source_topic_type: string;
+  output_type: string;
+  structure_template: string[];
+  reuse_constraints: string[];
+  anti_copy_rules: string[];
+  tags?: string[];
+  notes?: string;
+  applicable_topics?: string[];
+  success_cases?: string[];
+  reuse_count?: number;
+  publishable_rate?: number;
+  average_risk_level?: string;
+  average_text_overlap_percent?: number;
+  recommendation_summary?: string;
+  recommended_usage?: string;
+  created_at: string;
 }
 
 export interface VideoReportData {
@@ -292,6 +654,95 @@ export interface TranscriptBundle {
   transcript: TranscriptRecord | null;
   translation: TranslationRecord | null;
   translation_status?: TranslationStatus | null;
+}
+
+export interface StoryWorkbenchSegment {
+  index: number;
+  label_key: string;
+  label: string;
+  text: string;
+  length: number;
+}
+
+export interface StoryWorkbenchAnalysis {
+  opening_5s_hook: string;
+  first_30s_retention: string;
+  protagonist_position: string;
+  status_gap: string;
+  first_payoff: string;
+  middle_escalation: string;
+  opposition_design: string;
+  public_reversal: string;
+  ending_suspense: string;
+  reusable_template: string[];
+  non_reusable_content: string[];
+  structure_confidence: "low" | "medium" | "high" | string;
+  analysis_basis: "cleaned_transcript" | "report_only" | string;
+  manual_override?: boolean;
+  manual_updated_at?: string;
+  evidence?: Record<string, StoryWorkbenchEvidence>;
+}
+
+export interface StoryWorkbenchEvidence {
+  segment_indexes: number[];
+  excerpts: string[];
+}
+
+export interface StoryWorkbenchVersion {
+  id: string;
+  version: number;
+  source: string;
+  cleaned_text: string;
+  cleaned_length: number;
+  segment_count: number;
+  structure_confidence: string;
+  quality_score?: number;
+  quality_status?: "ready" | "needs_review" | "poor" | string;
+  created_at: string;
+}
+
+export interface StoryWorkbenchCleanupStats {
+  raw_length: number;
+  cleaned_length: number;
+  removed_characters: number;
+  compression_percent: number;
+  noise_marker_count: number;
+  duplicate_sentence_count: number;
+  paragraph_count: number;
+  segment_count: number;
+  quality_score?: number;
+  quality_status?: "ready" | "needs_review" | "poor" | string;
+  manual_review_reasons?: string[];
+}
+
+export interface StoryWorkbenchCleanupChange {
+  text: string;
+  reason: string;
+}
+
+export interface StoryWorkbenchCleanupChanges {
+  removed_noise?: StoryWorkbenchCleanupChange[];
+  removed_duplicates?: StoryWorkbenchCleanupChange[];
+  paragraph_changes?: string[];
+  sentence_break_changes?: string[];
+}
+
+export interface StoryWorkbenchItem {
+  report_id: string;
+  video_id: string;
+  video_title: string;
+  video_url: string;
+  raw_text: string;
+  raw_length: number;
+  cleaned_text: string;
+  cleaned_length: number;
+  cleanup_stats?: StoryWorkbenchCleanupStats;
+  cleanup_changes?: StoryWorkbenchCleanupChanges;
+  segments: StoryWorkbenchSegment[];
+  analysis: StoryWorkbenchAnalysis;
+  cleaned_versions?: StoryWorkbenchVersion[];
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface TaskStep {

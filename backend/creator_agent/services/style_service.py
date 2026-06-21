@@ -47,6 +47,27 @@ class StyleService:
         self._update(learn)
         return {"style_profile": style_holder["profile"]}
 
+    def merge_reports(self, report_ids: list[str], name: str | None = None) -> dict[str, Any]:
+        cleaned_ids = [str(item).strip() for item in report_ids if str(item).strip()]
+        if len(cleaned_ids) < 2:
+            raise ValueError("Select at least two reports to merge.")
+
+        style_holder: dict[str, Any] = {}
+
+        def merge(data: dict[str, Any]) -> None:
+            reports = [report for report in data["reports"] if str(report.get("id") or "") in cleaned_ids]
+            if len(reports) < 2:
+                raise ValueError("At least two selected reports must exist.")
+            profile = self._build_merged_report_style(
+                reports=reports,
+                name=name or self._merged_style_name(reports),
+            )
+            data["style_profiles"].insert(0, profile)
+            style_holder["profile"] = profile
+
+        self._update(merge)
+        return {"style_profile": style_holder["profile"]}
+
     def apply_style(self, style_id: str, idea_id: str, draft_type: str = "opening_script") -> dict[str, Any]:
         data = self._load()
         style = self._find_by_id(data["style_profiles"], style_id)
@@ -97,6 +118,47 @@ class StyleService:
                 "不要只替换名词，必须重设人物关系、触发事件和场景。",
                 "不要让系统奖励只停留在数字上涨，要转化成身份变化和剧情冲突。",
             ],
+            "created_at": utc_now_iso(),
+        }
+
+    def _build_merged_report_style(self, reports: list[dict[str, Any]], name: str) -> dict[str, Any]:
+        structures: list[str] = []
+        emotional_curves: list[str] = []
+        hooks: list[str] = []
+        growth_reasons: list[str] = []
+        avoid_copying: list[str] = [
+            "不要复用任一来源视频的角色名、地名、系统名、具体对白和连续桥段。",
+            "只保留共同的结构机制和情绪推进，不保留单条视频的表层事件。",
+            "多来源共同出现的桥段也要迁移到新题材、新场景和新人物关系。",
+        ]
+
+        for report in reports:
+            breakdown = report.get("creative_breakdown") if isinstance(report.get("creative_breakdown"), dict) else {}
+            growth = report.get("growth_judgement") if isinstance(report.get("growth_judgement"), dict) else {}
+            structures.extend(self._clean_list(breakdown.get("structure")))
+            emotional_curves.extend(self._clean_list(breakdown.get("emotional_curve")))
+            hooks.extend(self._clean_list([breakdown.get("opening_hook"), breakdown.get("title_hook"), report.get("summary")]))
+            growth_reasons.extend(self._clean_list(growth.get("reasons")))
+
+        rhythm_formula = self._dedupe(structures)[:10]
+        emotional_engine = self._dedupe(emotional_curves)[:10]
+        hook_patterns = self._dedupe(hooks + growth_reasons)[:10]
+        return {
+            "id": unique_workspace_id("style"),
+            "name": name.strip() or self._merged_style_name(reports),
+            "source_report_id": "",
+            "source_report_ids": [str(report.get("id") or "") for report in reports],
+            "source_video_title": " / ".join(str(report.get("video_title") or "") for report in reports[:3] if report.get("video_title")),
+            "source_video_url": "",
+            "topic_type": "multi_report_merge",
+            "opening_formula": hook_patterns[0] if hook_patterns else "先抛出强后果，再补充隐藏规则和身份差。",
+            "title_formula": "把共同爽点转成新题材标题：低估 -> 触发 -> 公开兑现 -> 更大悬念。",
+            "rhythm_formula": rhythm_formula or ["强冲突开场", "隐藏规则出现", "第一次兑现", "公开反转", "结尾抬高代价"],
+            "emotional_engine": emotional_engine or ["压迫", "好奇", "爽点兑现", "身份反转", "悬念"],
+            "hook_patterns": hook_patterns,
+            "sentence_style": "融合多条爆款的高信息密度口播风格；短句推进，节点清楚，每段只推进一个新信息差。",
+            "reusable_rules": self._merged_reusable_rules(rhythm_formula, emotional_engine),
+            "avoid_copying": avoid_copying,
             "created_at": utc_now_iso(),
         }
 
@@ -243,6 +305,40 @@ class StyleService:
     def _default_style_name(self, report: dict[str, Any]) -> str:
         title = str(report.get("video_title") or "爆款脚本风格")
         return f"{title[:32]} 风格"
+
+    def _merged_style_name(self, reports: list[dict[str, Any]]) -> str:
+        first_title = str(reports[0].get("video_title") or "多视频")
+        return f"{first_title[:24]} 等 {len(reports)} 条融合风格"
+
+    def _merged_reusable_rules(self, rhythm_formula: list[str], emotional_engine: list[str]) -> list[str]:
+        rules = [
+            "保留多条视频共同出现的开场压迫、隐藏优势、第一次兑现和公开反转机制。",
+            "新故事必须替换人物身份、触发事件、场景关系和奖励表达。",
+            "每 1-2 段推进一个新的信息差或爽点，避免解释性段落过长。",
+            "结尾必须抬高下一个代价、敌人或奖励层级，形成续看动机。",
+        ]
+        if rhythm_formula:
+            rules.append("参考融合节奏：" + " / ".join(rhythm_formula[:5]))
+        if emotional_engine:
+            rules.append("参考融合情绪：" + " / ".join(emotional_engine[:5]))
+        return rules
+
+    def _clean_list(self, value: Any) -> list[str]:
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return [str(value).strip()] if str(value or "").strip() else []
+
+    def _dedupe(self, items: list[str]) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            normalized = item.strip()
+            key = normalized.lower()
+            if not normalized or key in seen:
+                continue
+            seen.add(key)
+            result.append(normalized)
+        return result
 
     def _find_by_id(self, items: list[dict[str, Any]], item_id: str) -> dict[str, Any] | None:
         for item in items:

@@ -95,6 +95,209 @@ class TaskService:
         )
         return {"task": self._normalize_task(task), "redis": self.redis_status(), "queue": self.queue_status(), "enqueued": enqueued}
 
+    def create_batch_video_analysis_tasks(
+        self,
+        limit: int = 10,
+        *,
+        prioritize_candidates: bool = False,
+        video_urls: list[str] | None = None,
+    ) -> dict[str, Any]:
+        selected_urls = [url.strip() for url in (video_urls or []) if url.strip()]
+        if limit < 1 and not selected_urls:
+            raise ValueError("Limit must be at least 1.")
+        data = self.store.load()
+        existing_targets = {
+            str(job.get("target_url") or job.get("payload", {}).get("video_url") or "")
+            for job in data["jobs"]
+            if str(job.get("kind") or "") == "video_analysis" and str(job.get("status") or "") in {"queued", "running"}
+        }
+        analyzed_targets = {str(report.get("video_url") or "") for report in data["reports"]}
+        candidates: list[dict[str, Any]] = []
+        skipped: list[dict[str, str]] = []
+
+        source_videos = data["recent_videos"]
+        candidate_context: dict[str, dict[str, Any]] = {}
+        if selected_urls:
+            selected_set = set(selected_urls)
+            by_url = {str(video.get("url") or ""): video for video in data["recent_videos"]}
+            source_videos = [by_url[url] for url in selected_urls if url in by_url]
+            missing = [url for url in selected_urls if url not in by_url]
+            skipped.extend({"title": url, "reason": "not_found"} for url in missing)
+            limit = len(selected_set)
+        elif prioritize_candidates:
+            topic_candidates = self._topic_candidates(data["recent_videos"], limit=len(data["recent_videos"]))
+            candidate_urls = [candidate["url"] for candidate in topic_candidates]
+            candidate_context = {str(candidate.get("url") or ""): candidate for candidate in topic_candidates}
+            by_url = {str(video.get("url") or ""): video for video in data["recent_videos"]}
+            ranked = [by_url[url] for url in candidate_urls if url in by_url]
+            ranked_urls = {str(video.get("url") or "") for video in ranked}
+            source_videos = ranked + [video for video in data["recent_videos"] if str(video.get("url") or "") not in ranked_urls]
+
+        for video in source_videos:
+            video_url = str(video.get("url") or "")
+            if not video_url:
+                skipped.append({"title": str(video.get("title") or ""), "reason": "missing_url"})
+                continue
+            if video_url in analyzed_targets or str(video.get("analysis_status") or "") == "complete":
+                skipped.append({"title": str(video.get("title") or video_url), "reason": "already_analyzed"})
+                continue
+            if video_url in existing_targets:
+                skipped.append({"title": str(video.get("title") or video_url), "reason": "already_queued"})
+                continue
+            candidates.append(video)
+            if len(candidates) >= limit:
+                break
+
+        tasks = [
+            self.create_task(
+                "video_analysis",
+                {
+                    "video_url": str(video.get("url") or ""),
+                    "video_title": str(video.get("title") or ""),
+                    "video_id": str(video.get("youtube_video_id") or video.get("id") or ""),
+                    "channel_title": str(video.get("channel_title") or ""),
+                    "candidate_score": candidate_context.get(str(video.get("url") or ""), {}).get("score"),
+                    "candidate_reasons": candidate_context.get(str(video.get("url") or ""), {}).get("reasons", []),
+                    "candidate_topic_group": candidate_context.get(str(video.get("url") or ""), {}).get("topic_group", ""),
+                    "candidate_freshness_bucket": candidate_context.get(str(video.get("url") or ""), {}).get("freshness_bucket", ""),
+                    "candidate_view_bucket": candidate_context.get(str(video.get("url") or ""), {}).get("view_bucket", ""),
+                    "candidate_viral_potential": candidate_context.get(str(video.get("url") or ""), {}).get("viral_potential"),
+                    "candidate_story_fit": candidate_context.get(str(video.get("url") or ""), {}).get("story_fit"),
+                    "candidate_structure_reuse_value": candidate_context.get(str(video.get("url") or ""), {}).get("structure_reuse_value"),
+                    "candidate_risk_flags": candidate_context.get(str(video.get("url") or ""), {}).get("risk_flags", []),
+                },
+            )["task"]
+            for video in candidates
+        ]
+        return {
+            "tasks": tasks,
+            "queued_count": len(tasks),
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+            "prioritized": prioritize_candidates,
+            "selected": bool(selected_urls),
+            "redis": self.redis_status(),
+            "queue": self.queue_status(),
+        }
+
+    def _topic_candidates(self, recent_videos: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+        candidates = []
+        for video in recent_videos:
+            video_url = str(video.get("url") or "")
+            if not video_url:
+                continue
+            if str(video.get("analysis_status") or "pending") == "complete":
+                continue
+            score, reasons = self._topic_candidate_score(video)
+            views = self._as_int(video.get("view_count"))
+            published = str(video.get("published_at") or video.get("published_text") or "")
+            dimensions = self._topic_candidate_dimensions(video, views, published)
+            candidates.append(
+                {
+                    "url": video_url,
+                    "score": score,
+                    "reasons": reasons,
+                    "view_count": views,
+                    "title": str(video.get("title") or ""),
+                    "topic_group": self._topic_group(video),
+                    "freshness_bucket": self._freshness_bucket(published),
+                    "view_bucket": self._view_bucket(views),
+                    **dimensions,
+                }
+            )
+        return sorted(candidates, key=lambda item: (-item["score"], -item["view_count"], item["title"]))[:limit]
+
+    def _topic_candidate_score(self, video: dict[str, Any]) -> tuple[int, list[str]]:
+        title = str(video.get("title") or "")
+        published = str(video.get("published_at") or video.get("published_text") or "")
+        views = self._as_int(video.get("view_count"))
+        score = 30
+        reasons: list[str] = []
+        if views >= 100000:
+            score += 35
+            reasons.append("High view count")
+        elif views >= 10000:
+            score += 22
+            reasons.append("Above-average view count")
+        elif views >= 1000:
+            score += 10
+            reasons.append("Early traction")
+        story_keywords = ["story", "recap", "revenge", "twist", "system", "secret", "反转", "故事", "系统", "打脸", "复仇", "隐藏", "逆袭"]
+        matched = [keyword for keyword in story_keywords if keyword.lower() in title.lower()]
+        if matched:
+            score += min(24, 8 * len(matched))
+            reasons.append("Story keywords: " + ", ".join(matched[:3]))
+        if any(token in published.lower() for token in ["hour", "today", "minute", "刚刚", "小时", "今天"]):
+            score += 12
+            reasons.append("Fresh upload")
+        return min(score, 100), reasons or ["Pending analysis"]
+
+    def _topic_candidate_dimensions(self, video: dict[str, Any], views: int, published: str) -> dict[str, Any]:
+        title = str(video.get("title") or "")
+        topic_group = self._topic_group(video)
+        viral_potential = 30
+        if views >= 100000:
+            viral_potential = 92
+        elif views >= 10000:
+            viral_potential = 78
+        elif views >= 1000:
+            viral_potential = 58
+        if self._freshness_bucket(published) == "fresh":
+            viral_potential = min(100, viral_potential + 12)
+        story_fit = 42
+        if topic_group != "general":
+            story_fit += 28
+        story_terms = ["story", "recap", "revenge", "twist", "system", "secret", "反转", "故事", "系统", "打脸", "复仇", "隐藏", "逆袭"]
+        matched_story_terms = [term for term in story_terms if term.lower() in title.lower()]
+        story_fit = min(100, story_fit + min(24, len(matched_story_terms) * 8))
+        structure_reuse_value = min(100, 36 + (22 if topic_group in {"revenge", "system", "secret", "twist"} else 0) + (18 if views >= 10000 else 0) + (12 if self._freshness_bucket(published) != "older" else 0))
+        risk_flags: list[str] = []
+        if topic_group == "general":
+            risk_flags.append("题材信号弱，可能不适合短片小说结构拆解。")
+        if views < 1000:
+            risk_flags.append("播放表现偏低，建议降低优先级。")
+        if any(token in title.lower() for token in ["full movie", "episode", "official", "clip", "完整版", "第", "集"]):
+            risk_flags.append("可能是长剧/片段内容，拆解前确认版权和完整语境。")
+        if any(token in title.lower() for token in ["celebrity", "real story", "真实", "明星"]):
+            risk_flags.append("可能涉及真人或真实事件，转化时避免复用身份和具体经历。")
+        return {
+            "viral_potential": viral_potential,
+            "story_fit": story_fit,
+            "structure_reuse_value": structure_reuse_value,
+            "risk_flags": risk_flags or ["暂无明显候选风险。"],
+        }
+
+    def _topic_group(self, video: dict[str, Any]) -> str:
+        title = str(video.get("title") or "").lower()
+        if any(token in title for token in ["revenge", "复仇", "打脸", "逆袭"]):
+            return "revenge"
+        if any(token in title for token in ["system", "系统", "reward", "奖励"]):
+            return "system"
+        if any(token in title for token in ["secret", "hidden", "隐藏", "秘密"]):
+            return "secret"
+        if any(token in title for token in ["twist", "反转"]):
+            return "twist"
+        if any(token in title for token in ["story", "recap", "故事"]):
+            return "story"
+        return "general"
+
+    def _freshness_bucket(self, published: str) -> str:
+        normalized = published.lower()
+        if any(token in normalized for token in ["minute", "hour", "today", "刚刚", "分钟", "小时", "今天"]):
+            return "fresh"
+        if any(token in normalized for token in ["day", "yesterday", "天", "昨天"]):
+            return "recent"
+        return "older"
+
+    def _view_bucket(self, views: int) -> str:
+        if views >= 100000:
+            return "viral"
+        if views >= 10000:
+            return "rising"
+        if views >= 1000:
+            return "early"
+        return "low"
+
     def retry_task(self, task_id: str) -> dict[str, Any]:
         now = utc_now_iso()
 
@@ -361,6 +564,12 @@ class TaskService:
         if "timed out" in message.lower() or "timeout" in message.lower():
             return "The request timed out. Retry once the network or local service is stable."
         return message or exc.__class__.__name__
+
+    def _as_int(self, value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def _job_ids(self) -> set[str]:
         return {str(job.get("id") or "") for job in self.store.load()["jobs"]}

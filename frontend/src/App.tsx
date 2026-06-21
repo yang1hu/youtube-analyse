@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 
-import { analyzeSample, analyzeVideo, fetchDashboard, syncChannel } from "./api";
+import { analyzeSample, analyzeVideo, batchAnalyzeVideos, fetchDashboard, loadDemoWorkspace, syncChannel } from "./api";
 import Dashboard from "./components/Dashboard";
 import IdeaLab from "./components/IdeaLab";
 import ImitationFactory from "./components/ImitationFactory";
+import ProjectLibrary from "./components/ProjectLibrary";
 import Settings from "./components/Settings";
 import SampleLibrary from "./components/SampleLibrary";
 import ScriptStudio from "./components/ScriptStudio";
 import StyleLibrary from "./components/StyleLibrary";
 import TaskCenter from "./components/TaskCenter";
 import VideoReport from "./components/VideoReport";
-import type { DashboardData, Language, RecentVideo } from "./types";
+import type { CreationPipelineNextAction, DashboardData, Language, RecentVideo } from "./types";
 
 type View =
   | "dashboard"
@@ -18,6 +19,7 @@ type View =
   | "video-report"
   | "sample-library"
   | "idea-lab"
+  | "project-library"
   | "imitation-factory"
   | "style-library"
   | "script-studio"
@@ -32,7 +34,8 @@ const navLabels: Record<Language, Record<View, string>> = {
     "video-report": "\u89c6\u9891\u62a5\u544a",
     "sample-library": "\u6837\u672c\u5e93",
     "idea-lab": "\u9009\u9898\u5b9e\u9a8c\u5ba4",
-    "imitation-factory": "\u4eff\u5199\u5de5\u5382",
+    "project-library": "项目库",
+    "imitation-factory": "创作转化",
     "style-library": "\u98ce\u683c\u5e93",
     "script-studio": "\u521b\u4f5c\u53f0",
     settings: "\u8bbe\u7f6e"
@@ -43,7 +46,8 @@ const navLabels: Record<Language, Record<View, string>> = {
     "video-report": "Video Report",
     "sample-library": "Samples",
     "idea-lab": "Idea Lab",
-    "imitation-factory": "Imitation Factory",
+    "project-library": "Projects",
+    "imitation-factory": "Story Remix Lab",
     "style-library": "Style Library",
     "script-studio": "Script Studio",
     settings: "Settings"
@@ -70,6 +74,8 @@ export default function App() {
   const [workspaceMessage, setWorkspaceMessage] = useState("");
   const [workspaceMessageTone, setWorkspaceMessageTone] = useState<"saved" | "error">("saved");
   const [activeView, setActiveView] = useState<View>("dashboard");
+  const [focusedImitationProjectId, setFocusedImitationProjectId] = useState("");
+  const [focusedTemplateId, setFocusedTemplateId] = useState("");
   const [language, setLanguage] = useState<Language>(initialLanguage);
 
   const loadDashboard = () => {
@@ -154,12 +160,72 @@ export default function App() {
     }
   };
 
+  const handleBatchAnalyzeVideos = async (videoUrls: string[] = []) => {
+    setIsWorking(true);
+    setWorkspaceMessage("");
+    try {
+      const result = await batchAnalyzeVideos(videoUrls.length || 10, !videoUrls.length, videoUrls);
+      await loadDashboard();
+      setWorkspaceMessageTone(result.queued_count > 0 ? "saved" : "error");
+      setWorkspaceMessage(
+        videoUrls.length
+          ? language === "zh"
+            ? `已将选中的 ${result.queued_count} 条视频加入分析队列，跳过 ${result.skipped_count} 条。`
+            : `${result.queued_count} selected videos queued, ${result.skipped_count} skipped.`
+          : language === "zh"
+            ? `已按选题候选优先级加入分析队列 ${result.queued_count} 条，跳过 ${result.skipped_count} 条。`
+            : `${result.queued_count} candidate-prioritized videos queued, ${result.skipped_count} skipped.`
+      );
+      setActiveView("tasks");
+    } catch (error) {
+      setWorkspaceMessageTone("error");
+      setWorkspaceMessage(error instanceof Error ? error.message : "Unable to batch analyze videos.");
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const handleLoadDemoWorkspace = async () => {
+    setIsWorking(true);
+    setWorkspaceMessage("");
+    try {
+      const demoDashboard = await loadDemoWorkspace();
+      setDashboard(demoDashboard);
+      setWorkspaceMessageTone("saved");
+      setWorkspaceMessage(language === "zh" ? "演示工作区已载入，可以查看完整创作链路。" : "Demo workspace loaded. You can now review the full creation flow.");
+      setActiveView("dashboard");
+    } catch (error) {
+      setWorkspaceMessageTone("error");
+      setWorkspaceMessage(error instanceof Error ? error.message : "Unable to load demo workspace.");
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const runPipelineAction = (action?: CreationPipelineNextAction) => {
+    if (!action) {
+      setActiveView("dashboard");
+      return;
+    }
+    if (action.action_type === "sync_channel") {
+      void handleSyncChannel();
+      return;
+    }
+    const target = action.target_view as View;
+    if (target && target in navLabels[language]) {
+      setActiveView(target);
+      return;
+    }
+    setActiveView("dashboard");
+  };
+
   const navItems: { view: View }[] = [
     { view: "dashboard" },
     { view: "tasks" },
     { view: "video-report" },
     { view: "sample-library" },
     { view: "idea-lab" },
+    { view: "project-library" },
     { view: "imitation-factory" },
     { view: "style-library" },
     { view: "script-studio" },
@@ -169,6 +235,18 @@ export default function App() {
   const changeLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage);
     window.localStorage.setItem(languageStorageKey, nextLanguage);
+  };
+
+  const openImitationProject = (projectId: string) => {
+    setFocusedImitationProjectId(projectId);
+    setFocusedTemplateId("");
+    setActiveView("imitation-factory");
+  };
+
+  const useStructureTemplate = (templateId: string) => {
+    setFocusedImitationProjectId("");
+    setFocusedTemplateId(templateId);
+    setActiveView("imitation-factory");
   };
 
   return (
@@ -216,16 +294,49 @@ export default function App() {
           language={language}
           onAnalyzeSample={handleAnalyzeSample}
           onAnalyzeVideo={handleAnalyzeVideo}
+          onBatchAnalyzeVideos={handleBatchAnalyzeVideos}
+          onLoadDemoWorkspace={handleLoadDemoWorkspace}
+          onOpenView={setActiveView}
           onSyncChannel={handleSyncChannel}
           message={workspaceMessage}
           messageTone={workspaceMessageTone}
         />
       )}
       {activeView === "tasks" && <TaskCenter language={language} />}
-      {activeView === "video-report" && <VideoReport language={language} />}
+      {activeView === "video-report" && (
+        <VideoReport
+          language={language}
+          nextAction={dashboard.creation_pipeline?.next_action}
+          onOpenDashboard={() => setActiveView("dashboard")}
+          onRunNextAction={runPipelineAction}
+        />
+      )}
       {activeView === "sample-library" && <SampleLibrary language={language} />}
       {activeView === "idea-lab" && <IdeaLab language={language} />}
-      {activeView === "imitation-factory" && <ImitationFactory language={language} />}
+      {activeView === "project-library" && (
+        <ProjectLibrary
+          data={dashboard}
+          language={language}
+          nextAction={dashboard.creation_pipeline?.next_action}
+          onDashboardChanged={loadDashboard}
+          onOpenCreation={() => setActiveView("imitation-factory")}
+          onOpenProject={openImitationProject}
+          onRunNextAction={runPipelineAction}
+          onUseTemplate={useStructureTemplate}
+        />
+      )}
+      {activeView === "imitation-factory" && (
+        <ImitationFactory
+          focusedProjectId={focusedImitationProjectId}
+          focusedTemplateId={focusedTemplateId}
+          language={language}
+          nextAction={dashboard.creation_pipeline?.next_action}
+          onOpenDashboard={() => setActiveView("dashboard")}
+          onOpenReports={() => setActiveView("video-report")}
+          onProjectsChanged={loadDashboard}
+          onRunNextAction={runPipelineAction}
+        />
+      )}
       {activeView === "style-library" && <StyleLibrary language={language} />}
       {activeView === "script-studio" && <ScriptStudio language={language} />}
       {activeView === "settings" && <Settings language={language} />}

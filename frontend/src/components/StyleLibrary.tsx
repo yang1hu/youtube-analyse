@@ -1,8 +1,8 @@
-import { BookOpenText, PenLine, WandSparkles } from "lucide-react";
+import { BookOpenText, Layers3, PenLine, WandSparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { applyStyle, fetchIdeas, fetchStyles, learnLatestStyle } from "../api";
-import type { CopyDraft, IdeaCard, Language, StyleProfile } from "../types";
+import { applyStyle, fetchIdeas, fetchReports, fetchStyles, learnLatestStyle, mergeReportStyles } from "../api";
+import type { CopyDraft, IdeaCard, Language, StyleProfile, VideoReportData } from "../types";
 
 interface StyleLibraryProps {
   language: Language;
@@ -13,21 +13,26 @@ export default function StyleLibrary({ language }: StyleLibraryProps) {
   const [styles, setStyles] = useState<StyleProfile[]>([]);
   const [drafts, setDrafts] = useState<CopyDraft[]>([]);
   const [ideas, setIdeas] = useState<IdeaCard[]>([]);
+  const [reports, setReports] = useState<VideoReportData[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState("");
   const [selectedIdeaId, setSelectedIdeaId] = useState("");
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [styleName, setStyleName] = useState("");
   const [message, setMessage] = useState("");
   const [isLearning, setIsLearning] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
 
   const load = async () => {
     try {
-      const [styleData, ideaData] = await Promise.all([fetchStyles(), fetchIdeas()]);
+      const [styleData, ideaData, reportData] = await Promise.all([fetchStyles(), fetchIdeas(), fetchReports()]);
       setStyles(styleData.style_profiles);
       setDrafts(styleData.copy_drafts);
       setIdeas(ideaData);
+      setReports(reportData);
       setSelectedStyleId(current => current || styleData.style_profiles[0]?.id || "");
       setSelectedIdeaId(current => current || ideaData[0]?.id || "");
+      setSelectedReportIds(current => current.length ? current : reportData.slice(0, 2).map(report => report.id));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : isZh ? "风格库加载失败。" : "Style library failed to load.");
     }
@@ -49,6 +54,31 @@ export default function StyleLibrary({ language }: StyleLibraryProps) {
       setMessage(error instanceof Error ? error.message : isZh ? "学习失败。" : "Learning failed.");
     } finally {
       setIsLearning(false);
+    }
+  };
+
+  const toggleReport = (reportId: string) => {
+    setSelectedReportIds(current =>
+      current.includes(reportId) ? current.filter(item => item !== reportId) : [...current, reportId]
+    );
+  };
+
+  const mergeReports = async () => {
+    if (selectedReportIds.length < 2) {
+      setMessage(isZh ? "请至少选择两个报告。" : "Select at least two reports.");
+      return;
+    }
+    setIsMerging(true);
+    setMessage("");
+    try {
+      const profile = await mergeReportStyles(selectedReportIds, styleName);
+      await load();
+      setSelectedStyleId(profile.id);
+      setMessage(isZh ? "已融合多个报告的共同结构和风格。" : "Merged reusable style from multiple reports.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : isZh ? "融合失败。" : "Merge failed.");
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -105,6 +135,36 @@ export default function StyleLibrary({ language }: StyleLibraryProps) {
             {isLearning ? (isZh ? "学习中..." : "Learning...") : isZh ? "学习最新爆款风格" : "Learn Latest Style"}
           </button>
           {message && <p className="form-message form-message-idle">{message}</p>}
+        </article>
+
+        <article className="panel style-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">{isZh ? "多视频融合" : "Multi-report merge"}</p>
+              <h2>{isZh ? "融合多个报告风格" : "Merge Report Styles"}</h2>
+            </div>
+            <Layers3 aria-hidden="true" size={22} />
+          </div>
+          <div className="report-select-list">
+            {reports.length ? (
+              reports.slice(0, 8).map(report => (
+                <label className="report-select-item" key={report.id}>
+                  <input
+                    checked={selectedReportIds.includes(report.id)}
+                    onChange={() => toggleReport(report.id)}
+                    type="checkbox"
+                  />
+                  <span>{report.video_title || report.video_url}</span>
+                </label>
+              ))
+            ) : (
+              <p className="panel-note">{isZh ? "暂无报告，先分析视频。" : "No reports yet. Analyze videos first."}</p>
+            )}
+          </div>
+          <button className="secondary-action compact-action" disabled={isMerging || selectedReportIds.length < 2} onClick={() => void mergeReports()} type="button">
+            <Layers3 aria-hidden="true" size={18} />
+            {isMerging ? (isZh ? "融合中..." : "Merging...") : isZh ? "融合报告风格" : "Merge Reports"}
+          </button>
         </article>
 
         <article className="panel style-panel">
